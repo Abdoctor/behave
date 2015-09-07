@@ -8,6 +8,7 @@ from behave.model import ScenarioOutline
 from behave.reporter.base import Reporter
 from behave.formatter.base import StreamOpener
 import sys
+import six
 
 
 # -- DISABLED: optional_steps = ('untested', 'undefined')
@@ -67,6 +68,9 @@ class SummaryReporter(Reporter):
         if self.show_failed_scenarios and self.failed_scenarios:
             self.stream.write("\nFailing scenarios:\n")
             for scenario in self.failed_scenarios:
+                if six.PY2:
+                    scenario.location = scenario.location.decode('utf-8')
+                    scenario.name = scenario.name.decode('utf-8')
                 self.stream.write(u"  %s  %s\n" % (
                     scenario.location, scenario.name))
             self.stream.write("\n")
