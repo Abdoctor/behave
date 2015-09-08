@@ -620,6 +620,11 @@ class Configuration(object):
             self.include_re = re.compile(self.include_re)
         if self.name:
             # -- SELECT: Scenario-by-name, build regular expression.
+            if six.PY2:
+                self.name = [
+                    name.decode('utf-8')
+                    if isinstance(name, str) else name for name in self.name
+                ]
             self.name_re = self.build_name_re(self.name)
 
         if self.stage is None:  # pylint: disable=access-member-before-definition
