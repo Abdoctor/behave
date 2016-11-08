@@ -10,10 +10,9 @@ executing a scope item.
 """
 
 from __future__ import absolute_import
-from behave.formatter.base import Formatter
-import os
-import os.path
 import six
+from behave.formatter.base import Formatter
+from behave.model_core import Status
 
 
 # -----------------------------------------------------------------------------
@@ -42,21 +41,20 @@ class ProgressFormatterBase(Formatter):
         self.stream = self.open()
         self.steps = []
         self.failures = []
-        self.current_feature  = None
+        self.current_feature = None
         self.current_scenario = None
         self.show_timings = config.show_timings and self.show_timings
 
     def reset(self):
         self.steps = []
         self.failures = []
-        self.current_feature  = None
+        self.current_feature = None
         self.current_scenario = None
 
     # -- FORMATTER API:
     def feature(self, feature):
         self.current_feature = feature
-        short_filename = os.path.relpath(feature.filename, os.getcwd())
-        self.stream.write("%s  " % six.text_type(short_filename))
+        self.stream.write("%s  " % six.text_type(feature.filename))
         self.stream.flush()
 
     def background(self, background):
@@ -156,9 +154,9 @@ class ScenarioProgressFormatter(ProgressFormatterBase):
         if not self.current_scenario:
             return  # SKIP: No results to report for first scenario.
         # -- NORMAL-CASE:
-        status = self.current_scenario.status
-        dot_status = self.dot_status[status]
-        if status == "failed":
+        status_name = self.current_scenario.status.name
+        dot_status = self.dot_status[status_name]
+        if status_name == "failed":
             # MAYBE TODO: self.failures.append(result)
             pass
         self.stream.write(dot_status)
@@ -181,13 +179,13 @@ class StepProgressFormatter(ProgressFormatterBase):
         """
         Report the progress for each step.
         """
-        dot_status = self.dot_status[result.status]
-        if result.status == "failed":
+        dot_status = self.dot_status[result.status.name]
+        if result.status == Status.failed:
             if (result.exception and
-                not isinstance(result.exception, AssertionError)):
+                    not isinstance(result.exception, AssertionError)):
                 # -- ISA-ERROR: Some Exception
                 dot_status = self.dot_status["error"]
-            result.feature  = self.current_feature
+            result.feature = self.current_feature
             result.scenario = self.current_scenario
             self.failures.append(result)
         self.stream.write(dot_status)
@@ -225,8 +223,7 @@ class ScenarioStepProgressFormatter(StepProgressFormatter):
     # -- FORMATTER API:
     def feature(self, feature):
         self.current_feature = feature
-        short_filename = os.path.relpath(feature.filename, os.getcwd())
-        self.stream.write(u"%s    # %s" % (feature.name, short_filename))
+        self.stream.write(u"%s    # %s" % (feature.name, feature.filename))
 
     def scenario(self, scenario):
         """Process the next scenario."""

@@ -7,12 +7,87 @@ for the model elements in behave.
 import os.path
 import sys
 import six
+from behave.capture import Captured
 from behave.textutil import text as _text
+from enum import Enum
+
+
+PLATFORM_WIN = sys.platform.startswith("win")
+def posixpath_normalize(path):
+    return path.replace("\\", "/")
 
 
 # -----------------------------------------------------------------------------
 # GENERIC MODEL CLASSES:
 # -----------------------------------------------------------------------------
+class Status(Enum):
+    """Provides the (test-run) status of a model element.
+    Features and Scenarios use: untested, skipped, passed, failed.
+    Steps may use all enum-values.
+
+    Enum values:
+    * untested (initial state):
+
+        Defines the initial state before a test-run.
+        Sometimes used to indicate that the model element was not executed
+        during a test run.
+
+    * skipped:
+
+        A model element is skipped because it should not run.
+        This is caused by filtering mechanisms, like tags, active-tags,
+        file-location arg, select-by-name, etc.
+
+    * passed: A model element was executed and passed (without failures).
+    * failed: Failures occured while executing it.
+    * undefined: Used for undefined-steps (no step implementation was found).
+    * executing: Marks the steps during execution (used in a formatter)
+
+    .. versionadded:: 1.2.6
+        Superceeds string-based status values.
+    """
+    untested = 0
+    skipped = 1
+    passed = 2
+    failed = 3
+    undefined = 4
+    executing = 5
+
+    def __eq__(self, other):
+        """Comparison operator equals-to other value.
+        Supports other enum-values and string (for backward compatibility).
+
+        EXAMPLES::
+
+            status = Status.passed
+            assert status == Status.passed
+            assert status == "passed"
+            assert status != "failed"
+
+        :param other:   Other value to compare (enum-value, string).
+        :return: True, if both values are equal. False, otherwise.
+        """
+        if isinstance(other, six.string_types):
+            # -- CONVENIENCE: Compare with string-name (backward-compatible)
+            return self.name == other
+        return super(Status, self).__eq__(other)
+
+    @classmethod
+    def from_name(cls, name):
+        """Select enumeration value by using its name.
+
+        :param name:    Name as key to the enum value (as string).
+        :return: Enum value (instance)
+        :raises: LookupError, if status name is unknown.
+        """
+        # pylint: disable=no-member
+        enum_value = cls.__members__.get(name, None)
+        if enum_value is None:
+            known_names = ", ".join(cls.__members__.keys())
+            raise LookupError("%s (expected: %s)" % (name, known_names))
+        return enum_value
+
+
 class Argument(object):
     """An argument found in a *feature file* step name and extracted using
     step decorator `parameters`_.
@@ -65,6 +140,8 @@ class FileLocation(object):
     __pychecker__ = "missingattrs=line"     # -- Ignore warnings for 'line'.
 
     def __init__(self, filename, line=None):
+        if PLATFORM_WIN:
+            filename = posixpath_normalize(filename)
         self.filename = filename
         self.line = line
 
@@ -106,8 +183,8 @@ class FileLocation(object):
         elif isinstance(other, six.string_types):
             return self.filename == other
         else:
-            raise AttributeError("Cannot compare FileLocation with %s:%s" % \
-                                 (type(other), other))
+            raise TypeError("Cannot compare FileLocation with %s:%s" % \
+                            (type(other), other))
 
     def __ne__(self, other):
         # return not self == other    # pylint: disable=unneeded-not
@@ -126,8 +203,8 @@ class FileLocation(object):
         elif isinstance(other, six.string_types):
             return self.filename < other
         else:
-            raise AttributeError("Cannot compare FileLocation with %s:%s" % \
-                                 (type(other), other))
+            raise TypeError("Cannot compare FileLocation with %s:%s" % \
+                            (type(other), other))
 
     def __le__(self, other):
         # -- SEE ALSO: python2.7, functools.total_ordering
@@ -192,6 +269,8 @@ class BasicStatement(object):
         assert isinstance(name, six.text_type)
         self.keyword = keyword
         self.name = name
+        # -- SINCE: 1.2.6
+        self.captured = Captured()
         # -- ERROR CONTEXT INFO:
         self.exception = None
         self.exc_traceback = None
@@ -207,6 +286,8 @@ class BasicStatement(object):
         return self.location.line
 
     def reset(self):
+        # -- RESET: Captured output data
+        self.captured.reset()
         # -- RESET: ERROR CONTEXT INFO
         self.exception = None
         self.exc_traceback = None
@@ -272,14 +353,15 @@ class TagStatement(BasicStatement):
 
 
 class TagAndStatusStatement(BasicStatement):
-    final_status = ('passed', 'failed', 'skipped')
+    # final_status = ('passed', 'failed', 'skipped')
+    final_status = (Status.passed, Status.failed, Status.skipped)
 
     def __init__(self, filename, line, keyword, name, tags):
         super(TagAndStatusStatement, self).__init__(filename, line, keyword, name)
         self.tags = tags
         self.should_skip = False
         self.skip_reason = None
-        self._cached_status = None
+        self._cached_status = Status.untested
 
     def should_run_with_tags(self, tag_expression):
         """Determines if statement should run when the tag expression is used.
@@ -296,10 +378,18 @@ class TagAndStatusStatement(BasicStatement):
             self._cached_status = self.compute_status()
         return self._cached_status
 
+    def set_status(self, value):
+        if isinstance(value, six.string_types):
+            value = Status.from_name(value)
+        self._cached_status = value
+
+    def clear_status(self):
+        self._cached_status = Status.untested
+
     def reset(self):
         self.should_skip = False
         self.skip_reason = None
-        self._cached_status = None
+        self.clear_status()
 
     def compute_status(self):
         raise NotImplementedError

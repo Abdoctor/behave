@@ -1,4 +1,5 @@
 # -*- coding: UTF-8 -*-
+# pylint: disable=line-too-long
 """
 This module provides a reporter with JUnit XML output.
 
@@ -65,22 +66,26 @@ Best sources are:
 .. _`JUnit XML`:  http://junitpdfreport.sourceforge.net/managedcontent/PdfTranslation
 .. _`ant spec 1`: https://github.com/windyroad/JUnit-Schema
 .. _`ant spec 2`: http://svn.apache.org/repos/asf/ant/core/trunk/src/main/org/apache/tools/ant/taskdefs/optional/junit/XMLJUnitResultFormatter.java
-
 """
+# pylint: enable=line-too-long
 
 from __future__ import absolute_import
 import os.path
 import codecs
-import sys
-import traceback
 from xml.etree import ElementTree
 from datetime import datetime
 from behave.reporter.base import Reporter
 from behave.model import Scenario, ScenarioOutline, Step
+from behave.model_core import Status
 from behave.formatter import ansi_escapes
 from behave.model_describe import ModelDescriptor
 from behave.textutil import indent, make_indentation, text as _text
 import six
+if six.PY2:
+    # -- USE: Python3 backport for better unicode compatibility.
+    import traceback2 as traceback
+else:
+    import traceback
 
 
 def CDATA(text=None):   # pylint: disable=invalid-name
@@ -91,7 +96,7 @@ def CDATA(text=None):   # pylint: disable=invalid-name
 
 
 class ElementTreeWithCDATA(ElementTree.ElementTree):
-    # pylint: disable=redefined-builtin
+    # pylint: disable=redefined-builtin, no-member
     def _write(self, file, node, encoding, namespaces):
         """This method is for ElementTree <= 1.2.6"""
 
@@ -99,7 +104,6 @@ class ElementTreeWithCDATA(ElementTree.ElementTree):
             text = node.text.encode(encoding)
             file.write("\n<![CDATA[%s]]>\n" % text)
         else:
-             # pylint: disable=no-member
             ElementTree.ElementTree._write(self, file, node, encoding,
                                            namespaces)
 
@@ -220,7 +224,7 @@ class JUnitReporter(Reporter):
 
     # -- REPORTER-API:
     def feature(self, feature):
-        if feature.status == "skipped" and not self.show_skipped:
+        if feature.status == Status.skipped and not self.show_skipped:
             # -- SKIP-OUTPUT: If skipped features should not be shown.
             return
 
@@ -267,6 +271,7 @@ class JUnitReporter(Reporter):
         tree.write(codecs.open(report_filename, "wb"), "UTF-8")
 
     # -- MORE:
+    # pylint: disable=line-too-long
     @staticmethod
     def select_step_with_status(status, steps):
         """Helper function to find the first step that has the given
@@ -274,17 +279,20 @@ class JUnitReporter(Reporter):
 
         EXAMPLE: Search for a failing step in a scenario (all steps).
             >>> scenario = ...
-            >>> failed_step = select_step_with_status("failed", scenario)
-            >>> failed_step = select_step_with_status("failed", scenario.all_steps)
-            >>> assert failed_step.status == "failed"
+            >>> failed_step = select_step_with_status(Status.failed, scenario)
+            >>> failed_step = select_step_with_status(Status.failed, scenario.all_steps)
+            >>> assert failed_step.status == Status.failed
 
         EXAMPLE: Search only scenario steps, skip background steps.
-            >>> failed_step = select_step_with_status("failed", scenario.steps)
+            >>> failed_step = select_step_with_status(Status.failed, scenario.steps)
 
-        :param status:  Step status to search for (as string).
+        :param status:  Step status to search for (as enum value).
         :param steps:   List of steps to search in (or scenario).
         :returns: Step object, if found.
         :returns: None, otherwise.
+
+        .. versionchanged:: 1.2.6
+            status: Use enum value instead of string (or string).
         """
         for step in steps:
             assert isinstance(step, Step), \
@@ -294,13 +302,14 @@ class JUnitReporter(Reporter):
         # -- OTHERWISE: No step with the given status found.
         # KeyError("Step with status={0} not found".format(status))
         return None
+    # pylint: enable=line-too-long
 
     def describe_step(self, step):
-        status = _text(step.status)
+        status_text = _text(step.status.name)
         if self.show_timings:
-            status += u" in %0.3fs" % step.duration
+            status_text += u" in %0.3fs" % step.duration
         text = u'%s %s ... ' % (step.keyword, step.name)
-        text += u'%s\n' % status
+        text += u'%s\n' % status_text
         if self.show_multiline:
             prefix = make_indentation(2)
             if step.text:
@@ -356,7 +365,7 @@ class JUnitReporter(Reporter):
         # pylint: disable=too-many-locals, too-many-branches, too-many-statements
         assert isinstance(scenario, Scenario)
         assert not isinstance(scenario, ScenarioOutline)
-        if scenario.status != "skipped" or self.show_skipped:
+        if scenario.status != Status.skipped or self.show_skipped:
             # -- NOTE: Count only if not-skipped or skipped should be shown.
             report.counts_tests += 1
         classname = report.classname
@@ -366,33 +375,34 @@ class JUnitReporter(Reporter):
             feature_name = self.make_feature_filename(feature)
 
         case = ElementTree.Element('testcase')
-        case.set(u'classname', u'%s.%s' % (classname, feature_name))
-        case.set(u'name', scenario.name or '')
-        case.set(u'status', scenario.status)
-        case.set(u'time', _text(round(scenario.duration, 6)))
+        case.set(u"classname", u"%s.%s" % (classname, feature_name))
+        case.set(u"name", scenario.name or "")
+        case.set(u"status", scenario.status.name)
+        case.set(u"time", _text(round(scenario.duration, 6)))
 
         step = None
         failing_step = None
-        if scenario.status == 'failed':
-            for status in ('failed', 'undefined'):
+        if scenario.status == Status.failed:
+            for status in (Status.failed, Status.undefined):
                 step = self.select_step_with_status(status, scenario)
                 if step:
                     break
             # -- NOTE: Scenario may fail now due to hook-errors.
-            element_name = 'failure'
+            element_name = "failure"
             if step and isinstance(step.exception, (AssertionError, type(None))):
                 # -- FAILURE: AssertionError
-                assert step.status in ('failed', 'undefined')
+                assert step.status in (Status.failed, Status.undefined)
                 report.counts_failed += 1
             else:
                 # -- UNEXPECTED RUNTIME-ERROR:
                 report.counts_errors += 1
-                element_name = 'error'
+                element_name = "error"
             # -- COMMON-PART:
             failure = ElementTree.Element(element_name)
             if step:
                 step_text = self.describe_step(step).rstrip()
-                text = u"\nFailing step: %s\nLocation: %s\n" % (step_text, step.location)
+                text = u"\nFailing step: %s\nLocation: %s\n" % \
+                       (step_text, step.location)
                 message = _text(step.exception)
                 failure.set(u'type', step.exception.__class__.__name__)
                 failure.set(u'message', message)
@@ -409,42 +419,43 @@ class JUnitReporter(Reporter):
                 text = _text(u"".join(traceback_lines))
             failure.append(CDATA(text))
             case.append(failure)
-        elif scenario.status in ("skipped", "untested") and self.show_skipped:
+        elif (scenario.status in (Status.skipped, Status.untested)
+              and self.show_skipped):
             report.counts_skipped += 1
-            step = self.select_step_with_status('undefined', scenario)
+            step = self.select_step_with_status(Status.undefined, scenario)
             if step:
                 # -- UNDEFINED-STEP:
                 report.counts_failed += 1
-                failure = ElementTree.Element(u'failure')
-                failure.set(u'type', u'undefined')
-                failure.set(u'message', (u'Undefined Step: %s' % step.name))
+                failure = ElementTree.Element(u"failure")
+                failure.set(u"type", u"undefined")
+                failure.set(u"message", (u"Undefined Step: %s" % step.name))
                 case.append(failure)
             else:
                 skip = ElementTree.Element(u'skipped')
                 case.append(skip)
 
         # Create stdout section for each test case
-        stdout = ElementTree.Element(u'system-out')
+        stdout = ElementTree.Element(u"system-out")
         text = u""
         if self.show_scenarios:
             text = self.describe_scenario(scenario)
 
         # Append the captured standard output
-        if scenario.stdout:
-            output = _text(scenario.stdout)
-            text += u'\nCaptured stdout:\n%s\n' % output
+        if scenario.captured.stdout:
+            output = _text(scenario.captured.stdout)
+            text += u"\nCaptured stdout:\n%s\n" % output
         stdout.append(CDATA(text))
         case.append(stdout)
 
         # Create stderr section for each test case
-        if scenario.stderr:
-            stderr = ElementTree.Element(u'system-err')
-            output = _text(scenario.stderr)
-            text = u'\nCaptured stderr:\n%s\n' % output
+        if scenario.captured.stderr:
+            stderr = ElementTree.Element(u"system-err")
+            output = _text(scenario.captured.stderr)
+            text = u"\nCaptured stderr:\n%s\n" % output
             stderr.append(CDATA(text))
             case.append(stderr)
 
-        if scenario.status != "skipped" or self.show_skipped:
+        if scenario.status != Status.skipped or self.show_skipped:
             report.testcases.append(case)
 
     def _process_scenario_outline(self, scenario_outline, report):
