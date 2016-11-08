@@ -1330,12 +1330,15 @@ class Step(BasicStatement, Replayable):
                 self.store_exception_context(e)
                 if e.args:
                     message = _text(e)
-                    error = u"Assertion Failed: "+ message
+                    error = u"Assertion Failed: " + message
                 else:
                     # no assertion text; format the exception
                     error = _text(traceback.format_exc())
             except Exception as e:      # pylint: disable=broad-except
                 self.status = Status.failed
+                if hasattr(e, '__cause__'):
+                    if not hasattr(e.__cause__, '__traceback__'):
+                        e.__cause__.__traceback__ = None
                 error = _text(traceback.format_exc())
                 self.store_exception_context(e)
 
